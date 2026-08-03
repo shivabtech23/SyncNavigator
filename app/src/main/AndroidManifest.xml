@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- ===== SDL proof of concept (hardware validation track) ===== -->
+
+    <!-- Legacy Bluetooth permissions, install-time, superseded on API 31+.
+         maxSdkVersion keeps them from being requested on newer devices where
+         BLUETOOTH_CONNECT is the real gate. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- API 31+. RUNTIME permission — must be granted by the user or the SDL
+         router service cannot open a socket and nothing connects, silently. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- API 34+ requires the specific foreground service type to be declared. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+
+    <!-- Required on Android 11+ to read Maps' resources, which is how
+         ViewTreeInspector.resourceName() turns an icon id into a readable
+         name like "ic_maneuver_turn_left". Without this, resourceName comes
+         back null everywhere and the parser loses its best lookup key. -->
+    <queries>
+        <package android:name="com.google.android.apps.maps" />
+        <package android:name="com.google.android.apps.mapslite" />
+        <intent>
+            <action android:name="com.smartdevicelink.router.service" />
+        </intent>
+        <intent>
+            <action android:name="sdl.router.startservice" />
+        </intent>
+    </queries>
+
+    <!-- No storage permission declared, deliberately. getExternalFilesDir()
+         writes to the app's own directory and has never required
+         READ/WRITE_EXTERNAL_STORAGE on any Android version. -->
+
+    <application
+        android:allowBackup="false"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.SyncNavigator.Splash">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".navigation.notification.NotificationLoggerService"
+            android:exported="false"
+            android:label="SYNC Navigator capture"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
+        <!-- ===== SDL proof of concept ===== -->
+
+        <!-- Hosts SdlManager. Started by SdlReceiver when SYNC connects. -->
+        <service
+            android:name=".sdl.SdlService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+
+        <!-- Runs in its own process, named exactly as the library expects.
+             Whichever installed SDL app has the highest router version hosts
+             the single Bluetooth connection for every SDL app on the device —
+             which is why this must be exported. -->
+        <service
+            android:name=".sdl.SdlRouterService"
+            android:exported="true"
+            android:foregroundServiceType="connectedDevice"
+            android:process="com.smartdevicelink.router"
+            tools:ignore="ExportedService">
+            <intent-filter>
+                <action android:name="com.smartdevicelink.router.service" />
+            </intent-filter>
+            <meta-data
+                android:name="sdl_router_version"
+                android:value="@integer/sdl_router_service_version_value" />
+        </service>
+
+        <!-- Fires on Bluetooth connect. Without the ACL_CONNECTED filter the
+             stack never starts and the app never reaches the Apps menu. -->
+        <receiver
+            android:name=".sdl.SdlReceiver"
+            android:enabled="true"
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+                <action android:name="sdl.router.startservice" />
+            </intent-filter>
+        </receiver>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+    </application>
+
+</manifest>
